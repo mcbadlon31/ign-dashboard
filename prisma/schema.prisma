@@ -1,0 +1,270 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+enum AppUserRole {
+  ADMIN
+  LEADER
+  COACH
+  VIEWER
+}
+
+enum GoalStatus {
+  PLANNED
+  IN_PROGRESS
+  ACHIEVED
+  DEFERRED
+}
+
+model User {
+  id          String       @id @default(cuid())
+  email       String       @unique
+  displayName String?
+  appRole     AppUserRole  @default(VIEWER)
+  persons     Person[]     @relation("UserPersons")
+}
+
+model Org {
+  id        String   @id @default(cuid())
+  name      String
+  slug      String   @unique
+  createdAt DateTime @default(now())
+
+  people     Person[]
+  outreaches Outreach[]
+  tags       Tag[]
+  userLinks  UserOrg[]
+}
+
+model Outreach {
+  id        String   @id @default(cuid())
+  orgId     String?
+  org       Org?     @relation(fields: [orgId], references: [id])
+  name      String
+  city      String?
+  leaderId  String?
+  leader    Person?  @relation("OutreachLeader", fields: [leaderId], references: [id])
+  persons   Person[] @relation("OutreachMembers")
+  assignments Assignment[]
+  accesses  OutreachAccess[]
+  savedViews SavedView[]
+  wipLimit  Int?
+}
+
+model Role {
+  id       String  @id @default(cuid())
+  name     String  @unique
+  tier     Int
+  colorHex String  @default("#64748B")
+  isActive Boolean @default(true)
+  assignments       Assignment[]
+  goals             GoalPlan[]        @relation("TargetRole")
+  templateVersions  RoleTemplateVersion[]
+}
+
+model Person {
+  id          String      @id @default(cuid())
+  orgId       String?
+  org         Org?        @relation(fields: [orgId], references: [id])
+  fullName    String
+  contact     String?
+  notes       String?
+  outreachId  String?
+  outreach    Outreach?   @relation("OutreachMembers", fields: [outreachId], references: [id])
+  leadingOutreaches Outreach[] @relation("OutreachLeader")
+  assignment  Assignment?
+  goalPlans   GoalPlan[]
+  activities  ActivityLog[]
+  capabilities PersonCapability[]
+  tags        PersonTag[]
+  users       User[]      @relation("UserPersons")
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+  coachEmail  String?
+  deletedAt   DateTime?
+}
+
+model Assignment {
+  id           String   @id @default(cuid())
+  personId     String   @unique
+  outreachId   String?
+  activeRoleId String?
+  startDate    DateTime @default(now())
+  endDate      DateTime?
+
+  person   Person   @relation(fields: [personId], references: [id])
+  outreach Outreach? @relation(fields: [outreachId], references: [id])
+  role     Role?     @relation(fields: [activeRoleId], references: [id])
+}
+
+model GoalPlan {
+  id           String     @id @default(cuid())
+  personId     String
+  targetRoleId String
+  targetDate   DateTime?
+  rationale    String?
+  setById      String?
+  status       GoalStatus @default(PLANNED)
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+  templateVersionId String?
+
+  person Person @relation(fields: [personId], references: [id])
+  target Role   @relation("TargetRole", fields: [targetRoleId], references: [id])
+  milestones Milestone[]
+}
+
+model Milestone {
+  id          String   @id @default(cuid())
+  goalPlanId  String
+  name        String
+  dueDate     DateTime?
+  completed   Boolean  @default(false)
+  evidenceUrl String?
+
+  goal GoalPlan @relation(fields: [goalPlanId], references: [id])
+}
+
+model ActivityLog {
+  id        String   @id @default(cuid())
+  personId  String
+  date      DateTime @default(now())
+  month     DateTime
+  type      String
+  notes     String?
+
+  person Person @relation(fields: [personId], references: [id])
+}
+
+model Capability {
+  id         String  @id @default(cuid())
+  name       String  @unique
+  rubricJson Json?
+  persons    PersonCapability[]
+}
+
+model PersonCapability {
+  id            String   @id @default(cuid())
+  personId      String
+  capabilityId  String
+  level         Int      @default(0)
+  lastAssessedAt DateTime?
+
+  person     Person     @relation(fields: [personId], references: [id])
+  capability Capability @relation(fields: [capabilityId], references: [id])
+
+  @@unique([personId, capabilityId])
+}
+
+model OutreachAccess {
+  id          String   @id @default(cuid())
+  userEmail   String
+  outreachId  String
+  role        AppUserRole @default(LEADER)
+
+  outreach    Outreach @relation(fields: [outreachId], references: [id])
+
+  @@unique([userEmail, outreachId])
+}
+
+model SavedView {
+  id          String   @id @default(cuid())
+  name        String
+  slug        String   @unique
+  outreachId  String?
+  createdBy   String?
+  isPublic    Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  filters     Json?
+
+  outreach    Outreach? @relation(fields: [outreachId], references: [id])
+}
+
+model Tag {
+  id        String   @id @default(cuid())
+  orgId     String?
+  org       Org?     @relation(fields: [orgId], references: [id])
+  name      String   @unique
+  colorHex  String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  people PersonTag[]
+}
+
+model PersonTag {
+  id        String   @id @default(cuid())
+  personId  String
+  tagId     String
+  createdAt DateTime @default(now())
+
+  person Person @relation(fields: [personId], references: [id])
+  tag    Tag    @relation(fields: [tagId], references: [id])
+
+  @@unique([personId, tagId])
+}
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  at        DateTime @default(now())
+  userEmail String?
+  action    String
+  entity    String?
+  entityId  String?
+  meta      Json?
+}
+
+model MergeLog {
+  id         String   @id @default(cuid())
+  createdAt  DateTime @default(now())
+  sourceId   String
+  targetId   String
+  stats      Json?
+  undone     Boolean  @default(false)
+}
+
+model CoachLimit {
+  coachEmail String @id
+  limit      Int
+  updatedAt  DateTime @updatedAt
+}
+
+model RoleTemplateVersion {
+  id             String   @id @default(cuid())
+  roleId         String
+  version        Int
+  milestonesJson Json
+  createdBy      String?
+  createdAt      DateTime @default(now())
+
+  role Role @relation(fields: [roleId], references: [id])
+
+  @@unique([roleId, version])
+}
+
+model AlertLog {
+  id        String   @id @default(cuid())
+  type      String
+  scope     String?
+  payload   Json?
+  sentAt    DateTime @default(now())
+}
+
+model UserOrg {
+  id         String   @id @default(cuid())
+  userEmail  String
+  orgId      String
+  role       String   // Admin | Member | Viewer
+  createdAt  DateTime @default(now())
+
+  org Org @relation(fields: [orgId], references: [id])
+
+  @@index([userEmail])
+  @@index([orgId])
+}

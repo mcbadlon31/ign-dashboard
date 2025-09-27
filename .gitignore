@@ -1,0 +1,28 @@
+# Dependencies
+node_modules/
+
+# Build output
+.next/
+dist/
+out/
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Env
+.env
+.env.local
+.env.*.local
+
+# Prisma
+prisma/dev.db*
+prisma/migrations/.history/
+
+# Misc
+.DS_Store
+.idea/
+.vscode/
+*.swp
