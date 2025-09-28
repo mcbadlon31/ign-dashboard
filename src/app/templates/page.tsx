@@ -1,72 +1,204 @@
-
 "use client";
-import { useEffect, useState } from "react";
 
-export default function TemplatesPage(){
-  const [data, setData] = useState<Record<string, string[]>>({});
-  const [role, setRole] = useState("");
-  const [newMs, setNewMs] = useState("");
+import { useEffect, useMemo, useState } from "react";
+import { PageHeader } from "@/components/layout/PageHeader";
+import { Button } from "@/components/ui/Button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/Card";
+import { Input } from "@/components/ui/Input";
+import { Select } from "@/components/ui/Select";
 
-  async function load(){
-    const d = await fetch("/api/templates").then(r=>r.json());
-    setData(d);
+type ToastState = { type: "success" | "error"; message: string } | null;
+
+type TemplatesResponse = Record<string, string[]>;
+
+export default function TemplatesPage() {
+  const [templates, setTemplates] = useState<TemplatesResponse>({});
+  const [selectedRole, setSelectedRole] = useState("");
+  const [newMilestone, setNewMilestone] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [toast, setToast] = useState<ToastState>(null);
+
+  async function load() {
+    try {
+      const res = await fetch("/api/templates");
+      if (!res.ok) throw new Error("Failed to load templates");
+      const data = (await res.json()) as TemplatesResponse;
+      setTemplates(data ?? {});
+      if (!selectedRole) {
+        const firstRole = Object.keys(data ?? {})[0];
+        if (firstRole) setSelectedRole(firstRole);
+      }
+    } catch (error) {
+      console.error(error);
+      setToast({ type: "error", message: "Unable to load templates." });
+    }
   }
-  useEffect(()=>{ load(); }, []);
 
-  function addMs(){
-    if (!role || !newMs) return;
-    setData(prev => ({ ...prev, [role]: [...(prev[role] || []), newMs] }));
-    setNewMs("");
+  useEffect(() => {
+    void load();
+  }, []);
+
+  useEffect(() => {
+    if (!toast) return;
+    const timer = window.setTimeout(() => setToast(null), 4000);
+    return () => window.clearTimeout(timer);
+  }, [toast]);
+
+  const milestones = useMemo(() => templates[selectedRole] ?? [], [templates, selectedRole]);
+
+  function addMilestone() {
+    const value = newMilestone.trim();
+    if (!selectedRole || !value) return;
+    setTemplates(prev => ({ ...prev, [selectedRole]: [...(prev[selectedRole] || []), value] }));
+    setNewMilestone("");
   }
 
-  function removeMs(roleName: string, idx: number){
-    setData(prev => ({ ...prev, [roleName]: prev[roleName].filter((_,i)=>i!==idx) }));
+  function removeMilestone(index: number) {
+    setTemplates(prev => ({
+      ...prev,
+      [selectedRole]: prev[selectedRole].filter((_, idx) => idx !== index),
+    }));
   }
 
-  async function save(){
-    await fetch("/api/templates", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data) });
-    alert("Saved");
-  }
-
-  function move(roleName: string, from: number, to: number){
-    setData(prev => {
-      const list = [...(prev[roleName] || [])];
-      const [it] = list.splice(from, 1);
-      list.splice(to, 0, it);
-      return { ...prev, [roleName]: list };
+  function reorderMilestone(from: number, to: number) {
+    setTemplates(prev => {
+      const list = [...(prev[selectedRole] || [])];
+      const [item] = list.splice(from, 1);
+      list.splice(to, 0, item);
+      return { ...prev, [selectedRole]: list };
     });
   }
 
+  async function saveAll() {
+    setSaving(true);
+    try {
+      const res = await fetch("/api/templates", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(templates),
+      });
+      if (!res.ok) throw new Error("Failed to save templates");
+      setToast({ type: "success", message: "Templates saved." });
+    } catch (error) {
+      console.error(error);
+      setToast({ type: "error", message: "Unable to save templates." });
+    } finally {
+      setSaving(false);
+    }
+  }
+
   return (
-    <main>
-      <h1 className="text-2xl font-semibold mb-4">Milestone Templates</h1>
+    <div className="space-y-8">
+      <PageHeader
+        title="Milestone templates"
+        description="Curate the checklist each role starts with. Drag milestones to reorder and publish changes when you are ready."
+        actions={
+          <Button variant="outline" onClick={() => void load()} disabled={saving}>
+            Refresh
+          </Button>
+        }
+      />
 
-      <div className="p-4 border rounded-xl bg-white shadow-sm mb-4 flex gap-2 items-center">
-        <select className="border rounded px-2 py-1" value={role} onChange={(e)=>setRole(e.target.value)}>
-          <option value="">Select role</option>
-          {Object.keys(data).map(k => <option key={k} value={k}>{k}</option>)}
-        </select>
-        <input className="border rounded px-2 py-1" placeholder="New milestone" value={newMs} onChange={(e)=>setNewMs(e.target.value)} />
-        <button onClick={addMs} className="px-3 py-1.5 rounded border">Add</button>
-        <button onClick={save} className="px-3 py-1.5 rounded bg-black text-white">Save All</button>
-      </div>
-
-      {role && (
-        <div className="p-4 border rounded-xl bg-white shadow-sm">
-          <div className="font-medium mb-2">{role}</div>
-          <ul className="grid gap-2">
-            {(data[role] || []).map((m, i) => (
-              <li key={i} className="flex items-center justify-between" draggable onDragStart={(e)=>{ e.dataTransfer.setData("text/plain", String(i)); }} onDragOver={(e)=>e.preventDefault()} onDrop={(e)=>{ const from = Number(e.dataTransfer.getData("text/plain")); move(role, from, i); }}>
-                <span>{m}</span>
-                <button onClick={()=>removeMs(role, i)} className="px-2 py-1 rounded border text-xs">Remove</button>
-              </li>
-            ))}
-            {(data[role] || []).length === 0 && <div className="text-sm text-gray-500">No milestones yet</div>}
-          </ul>
+      {toast && (
+        <div
+          className={`rounded-2xl border px-4 py-3 text-sm ${
+            toast.type === "success"
+              ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+              : "border-rose-200 bg-rose-50 text-rose-700"
+          }`}
+        >
+          {toast.message}
         </div>
       )}
 
-      <div className="text-xs text-gray-500 mt-4">Note: template edits write to <code>src/config/role-milestones.json</code> (fine for local dev).</div>
-    </main>
+      <Card className="max-w-4xl">
+        <CardHeader>
+          <CardTitle>Role templates</CardTitle>
+          <CardDescription>
+            Select a target role to adjust its checklist. Saving will update src/config/role-milestones.json for local development.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="grid gap-4 md:grid-cols-[220px,1fr]">
+          <div className="space-y-4">
+            <div>
+              <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">
+                Role
+              </label>
+              <Select value={selectedRole} onChange={event => setSelectedRole(event.target.value)}>
+                <option value="">Select role</option>
+                {Object.keys(templates).map(role => (
+                  <option key={role} value={role}>
+                    {role}
+                  </option>
+                ))}
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">
+                Add milestone
+              </label>
+              <Input
+                placeholder="Write the next milestone"
+                value={newMilestone}
+                onChange={event => setNewMilestone(event.target.value)}
+                disabled={!selectedRole}
+              />
+              <Button onClick={addMilestone} disabled={!selectedRole || !newMilestone.trim()}>
+                Add milestone
+              </Button>
+            </div>
+            <Button variant="outline" onClick={saveAll} disabled={saving}>
+              {saving ? "Saving..." : "Save all changes"}
+            </Button>
+          </div>
+
+          <div className="space-y-4">
+            {!selectedRole ? (
+              <Card className="border-dashed">
+                <CardContent className="py-10 text-center text-sm text-slate-500">
+                  Choose a role to review or edit its milestone checklist.
+                </CardContent>
+              </Card>
+            ) : (
+              <Card>
+                <CardHeader>
+                  <CardTitle>{selectedRole}</CardTitle>
+                  <CardDescription>
+                    Drag milestones to reorder. Changes are saved locally until you publish them.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <ul className="grid gap-2">
+                    {milestones.map((milestone, index) => (
+                      <li
+                        key={`${milestone}-${index}`}
+                        draggable
+                        onDragStart={event => event.dataTransfer.setData("text/plain", String(index))}
+                        onDragOver={event => event.preventDefault()}
+                        onDrop={event => {
+                          const from = Number(event.dataTransfer.getData("text/plain"));
+                          reorderMilestone(from, index);
+                        }}
+                        className="flex items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm shadow-sm"
+                      >
+                        <span className="truncate font-medium text-slate-700">{milestone}</span>
+                        <Button variant="ghost" onClick={() => removeMilestone(index)}>
+                          Remove
+                        </Button>
+                      </li>
+                    ))}
+                    {milestones.length === 0 && (
+                      <li className="rounded-2xl border border-dashed border-slate-200 px-4 py-4 text-center text-sm text-slate-500">
+                        No milestones yet for this role.
+                      </li>
+                    )}
+                  </ul>
+                </CardContent>
+              </Card>
+            )}
+          </div>
+        </CardContent>
+      </Card>
+    </div>
   );
 }

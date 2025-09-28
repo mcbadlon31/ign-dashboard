@@ -1,12 +1,16 @@
 import "./globals.css";
 import type { Metadata } from "next";
 import Link from "next/link";
-import { ReactNode } from "react";
+import { Inter } from "next/font/google";
+import type { ReactNode } from "react";
+import { MainNav } from "@/components/layout/MainNav";
 
 export const metadata: Metadata = {
   title: "IGN Trajectory",
   description: "Discipleship trajectory planner",
 };
+
+const inter = Inter({ subsets: ["latin"] });
 
 const NAV_LINKS = [
   { href: "/", label: "Dashboard" },
@@ -19,21 +23,24 @@ const NAV_LINKS = [
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
-    <html lang="en">
-      <body className="min-h-screen bg-slate-50 text-slate-900">
-        <div className="mx-auto max-w-6xl p-6">
-          <nav className="mb-6 flex flex-wrap gap-4 text-sm">
-            {NAV_LINKS.map(link => (
-              <Link
-                key={link.href}
-                href={link.href}
-                className="text-slate-600 transition hover:text-slate-900"
-              >
-                {link.label}
+    <html lang="en" className="bg-slate-100">
+      <body className={`${inter.className} min-h-screen bg-gradient-to-br from-slate-100 via-slate-50 to-white text-slate-900`}>
+        <div className="flex min-h-screen flex-col">
+          <header className="border-b border-slate-200 bg-white/90 backdrop-blur">
+            <div className="mx-auto flex w-full max-w-7xl flex-wrap items-center justify-between gap-4 px-6 py-5">
+              <Link href="/" className="flex items-center gap-2 text-base font-semibold tracking-tight text-slate-900">
+                <span className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-slate-900 text-sm font-bold text-white">
+                  IGN
+                </span>
+                Trajectory
               </Link>
-            ))}
-          </nav>
-          <main>{children}</main>
+              <MainNav links={NAV_LINKS} />
+            </div>
+          </header>
+
+          <div className="mx-auto w-full max-w-7xl flex-1 px-6 py-10">
+            <main className="space-y-10 pb-10">{children}</main>
+          </div>
         </div>
       </body>
     </html>
