@@ -1,8 +1,11 @@
-
 import { NextRequest, NextResponse } from "next/server";
 import nodemailer from "nodemailer";
+import { assertAdmin } from "@/lib/rbac";
 
 export async function POST(req: NextRequest){
+  const { ok } = await assertAdmin(req);
+  if (!ok) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+
   const { to, subject = "IGN Nudge", html } = await req.json();
   if (!to || !html) return NextResponse.json({ error: "to and html required" }, { status: 400 });
 

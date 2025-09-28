@@ -7,8 +7,8 @@
     "build": "next build",
     "start": "next start",
     "prisma:generate": "prisma generate",
-    "prisma:migrate": "prisma migrate dev --name init",
-    "prisma:seed": "node --loader ts-node/esm prisma/seed.ts"
+    "prisma:migrate": "prisma migrate dev",
+    "prisma:seed": "ts-node --esm prisma/seed.ts"
   },
   "dependencies": {
     "@prisma/client": "^6.16.2",

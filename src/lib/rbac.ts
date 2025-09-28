@@ -1,4 +1,3 @@
-
 import { NextRequest } from "next/server";
 import { getToken } from "next-auth/jwt";
 import { db } from "@/lib/db";
@@ -15,6 +14,13 @@ export function isAdminEmail(email: string | null): boolean {
   const raw = process.env.ADMIN_EMAILS || "";
   const list = raw.split(",").map(s => s.trim().toLowerCase()).filter(Boolean);
   return list.includes(email.toLowerCase());
+}
+
+export async function assertAdmin(req: NextRequest): Promise<{ ok: boolean; email: string | null; bypass: boolean }> {
+  const email = await getEmailFromReq(req);
+  const bypass = process.env.DEV_BYPASS_AUTH === "true";
+  const ok = bypass || isAdminEmail(email);
+  return { ok, email, bypass };
 }
 
 export async function canAccessOutreachId(email: string | null, outreachId: string | null): Promise<boolean> {

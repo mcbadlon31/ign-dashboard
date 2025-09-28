@@ -1,59 +1,56 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
+import { assertAdmin } from "@/lib/rbac";
+import { resolveOrgId } from "@/lib/org";
 import * as XLSX from "xlsx";
 import templates from "@/config/role-milestones.json";
 
 export const runtime = "nodejs";
 
 export async function POST(req: NextRequest) {
+  const { ok } = await assertAdmin(req);
+  if (!ok) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+
+  const orgId = await resolveOrgId();
+  if (!orgId) return NextResponse.json({ error: "Select an organization" }, { status: 400 });
+
   const form = await req.formData();
   const file = form.get("file") as File | null;
-  if (!file) {
-    return NextResponse.json({ error: "No file" }, { status: 400 });
-  }
+  if (!file) return NextResponse.json({ error: "No file" }, { status: 400 });
 
-  const buffer = Buffer.from(await file.arrayBuffer());
-  const workbook = XLSX.read(buffer, { type: "buffer" });
+  const buf = Buffer.from(await file.arrayBuffer());
+  const wb = XLSX.read(buf, { type: "buffer" });
 
-  const monthMap: Record<string, string> = {
-    September: "09",
-    October: "10",
-    November: "11",
-    December: "12",
-  };
+  const months: Record<string,string> = { September: "09", October: "10", November: "11", December: "12" };
+  let peopleImported = 0, goalsCreated = 0, milestonesCreated = 0;
 
-  let peopleImported = 0;
-  let goalsCreated = 0;
-  let milestonesCreated = 0;
+  for (const sheetName of wb.SheetNames) {
+    const ws = wb.Sheets[sheetName];
+    const rows: any[] = XLSX.utils.sheet_to_json(ws, { defval: "" });
 
-  for (const sheetName of workbook.SheetNames) {
-    const worksheet = workbook.Sheets[sheetName];
-    const rows: Array<Record<string, unknown>> = XLSX.utils.sheet_to_json(worksheet, { defval: "" });
-
-    let outreach = await db.outreach.findFirst({ where: { name: sheetName } });
+    let outreach = await db.outreach.findFirst({ where: { name: sheetName, orgId } });
     if (!outreach) {
-      outreach = await db.outreach.create({ data: { name: sheetName } });
+      outreach = await db.outreach.create({ data: { name: sheetName, orgId } });
     }
 
     const headerKeys = rows.length ? Object.keys(rows[0]) : [];
-    const currentRoleKey = headerKeys.find(key => /legend|current ?role/i.test(key)) ?? null;
+    const currentRoleKey = headerKeys.find(k => /legend|current ?role/i.test(k)) ?? null;
 
-    for (const row of rows) {
-      const columns = Object.keys(row);
-      if (columns.length === 0) continue;
-
-      const nameCell = columns[0];
-      const rawName = String(row[nameCell] ?? "").trim();
+    for (const r of rows) {
+      const keys = Object.keys(r);
+      if (keys.length === 0) continue;
+      const nameKey = keys[0];
+      const rawName = (r[nameKey] ?? "").toString().trim();
       if (!rawName) continue;
 
-      let person = await db.person.findFirst({ where: { fullName: rawName } });
+      let person = await db.person.findFirst({ where: { fullName: rawName, orgId } });
       if (person) {
         person = await db.person.update({ where: { id: person.id }, data: { outreachId: outreach.id } });
       } else {
-        person = await db.person.create({ data: { fullName: rawName, outreachId: outreach.id } });
+        person = await db.person.create({ data: { fullName: rawName, outreachId: outreach.id, orgId } });
       }
 
-      const currentRoleName = currentRoleKey ? String(row[currentRoleKey] ?? "").trim() : "";
+      let currentRoleName = currentRoleKey ? (r[currentRoleKey] ?? "").toString().trim() : "";
       if (currentRoleName) {
         const role = await db.role.findUnique({ where: { name: currentRoleName } });
         if (role) {
@@ -71,36 +68,30 @@ export async function POST(req: NextRequest) {
         });
       }
 
-      const targetRoleName = String(row.TargetRole ?? row.Goal ?? "").trim();
+      const targetRoleName = (r.TargetRole || r.Goal || "").toString().trim();
       if (targetRoleName) {
         const role = await db.role.findUnique({ where: { name: targetRoleName } });
         if (role) {
           const goal = await db.goalPlan.create({ data: { personId: person.id, targetRoleId: role.id } });
-          goalsCreated += 1;
+          goalsCreated++;
 
-          const milestones: string[] = (templates as Record<string, string[]>)[role.name] ?? [];
-          for (const milestone of milestones) {
-            await db.milestone.create({ data: { goalPlanId: goal.id, name: milestone } });
-            milestonesCreated += 1;
+          const arr: string[] = (templates as any)[role.name] ?? [];
+          for (const m of arr) {
+            await db.milestone.create({ data: { goalPlanId: goal.id, name: m } });
+            milestonesCreated++;
           }
         }
       }
 
-      for (const month of Object.keys(monthMap)) {
-        if (String(row[month] ?? "").trim()) {
-          const monthDate = new Date(`2024-${monthMap[month]}-01T00:00:00Z`);
+      for (const m of Object.keys(months)) {
+        if (String(r[m] || "").trim()) {
+          const firstDay = new Date(`2024-${months[m]}-01T00:00:00Z`);
           await db.activityLog.create({
-            data: {
-              personId: person.id,
-              month: monthDate,
-              type: "Attendance",
-              notes: `Imported from ${sheetName}/${month}`,
-            },
+            data: { personId: person.id, month: firstDay, type: "Attendance", notes: `Imported from ${sheetName}/${m}` },
           });
         }
       }
-
-      peopleImported += 1;
+      peopleImported++;
     }
   }
 

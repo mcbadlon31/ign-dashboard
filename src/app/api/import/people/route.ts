@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { audit } from "@/lib/audit";
+import { assertAdmin } from "@/lib/rbac";
+import { resolveOrgId } from "@/lib/org";
 
 function parseCSV(text: string) {
   const lines = text.split(/\r?\n/).filter(Boolean);
@@ -18,11 +20,14 @@ function parseCSV(text: string) {
 }
 
 export async function POST(req: NextRequest) {
-  const text = await req.text();
-  if (!text) {
-    return NextResponse.json({ error: "empty body" }, { status: 400 });
-  }
+  const { ok } = await assertAdmin(req);
+  if (!ok) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
+  const orgId = await resolveOrgId();
+  if (!orgId) return NextResponse.json({ error: "Select an organization" }, { status: 400 });
+
+  const text = await req.text();
+  if (!text) return NextResponse.json({ error: "empty body" }, { status: 400 });
   const rows = parseCSV(text);
   let created = 0;
 
@@ -32,22 +37,36 @@ export async function POST(req: NextRequest) {
 
     let outreachId: string | null = null;
     if (row.outreach) {
-      let outreach = await db.outreach.findFirst({ where: { name: row.outreach } });
+      let outreach = await db.outreach.findFirst({ where: { name: row.outreach, orgId } });
       if (!outreach) {
-        outreach = await db.outreach.create({ data: { name: row.outreach } });
+        outreach = await db.outreach.create({ data: { name: row.outreach, orgId } });
       }
       outreachId = outreach.id;
     }
 
-    const person = await db.person.create({
-      data: { fullName, outreachId, coachEmail: row.coachEmail || null },
-    });
+    let person = await db.person.findFirst({ where: { fullName, orgId } });
+    if (person) {
+      person = await db.person.update({ where: { id: person.id }, data: { outreachId, coachEmail: row.coachEmail || null } });
+    } else {
+      person = await db.person.create({ data: { fullName, outreachId, coachEmail: row.coachEmail || null, orgId } });
+      created += 1;
+    }
 
     if (row.currentRoleName) {
       const role = await db.role.findFirst({ where: { name: row.currentRoleName } });
       if (role) {
-        await db.assignment.create({ data: { personId: person.id, activeRoleId: role.id } });
+        await db.assignment.upsert({
+          where: { personId: person.id },
+          update: { activeRoleId: role.id, outreachId },
+          create: { personId: person.id, activeRoleId: role.id, outreachId },
+        });
       }
+    } else if (outreachId) {
+      await db.assignment.upsert({
+        where: { personId: person.id },
+        update: { outreachId },
+        create: { personId: person.id, outreachId },
+      });
     }
 
     if (row.goalTargetRoleName) {
@@ -65,7 +84,6 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    created += 1;
     await audit("import.person", { entity: "person", entityId: person.id, meta: row });
   }
 

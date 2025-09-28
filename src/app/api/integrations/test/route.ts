@@ -1,5 +1,5 @@
-
 import { NextRequest, NextResponse } from "next/server";
+import { assertAdmin } from "@/lib/rbac";
 
 async function sendWebhook(url: string, payload: any){
   try {
@@ -11,6 +11,9 @@ async function sendWebhook(url: string, payload: any){
 }
 
 export async function POST(req: NextRequest){
+  const { ok } = await assertAdmin(req);
+  if (!ok) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+
   const { text = "Hello from IGN" } = await req.json().catch(()=>({}));
   const slack = process.env.SLACK_WEBHOOK_URL;
   const teams = process.env.TEAMS_WEBHOOK_URL;

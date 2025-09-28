@@ -13,6 +13,7 @@ npx prisma migrate dev --name init
 npx ts-node prisma/seed.ts
 npm run dev
 ```
+Run additional migrations with `npm run prisma:migrate -- --name <label>` so each change gets a unique name.
 
 Open http://localhost:3000
 
@@ -21,7 +22,7 @@ Open http://localhost:3000
 - `/outreach` – live board with **outreach filter** and **quick actions** (add activity, complete next milestone)
 - `/roles` – role management (CRUD + color)
 - `/goal/new` – **Goal wizard** (creates goal + auto‑milestones from templates)
-- `/import` – Excel importer
+- `/import` – Excel importer (admin only; uses the active org scope)
 
 ## API
 - `POST /api/activities` – log an activity
@@ -37,12 +38,21 @@ Open http://localhost:3000
   - Set `DEV_BYPASS_AUTH=false`
   - Ensure `NEXTAUTH_URL` and `NEXTAUTH_SECRET` are set
 
+## Alerts & Automation
+- Configure `SMTP_HOST`, `SMTP_USER`, and related settings to send digests, alerts, and nudges; otherwise payloads are stored for review in the database.
+- Protect `/api/cron/daily` by sending the `CRON_SECRET` value in the `x-ign-cron-secret` header when your scheduler triggers the job.
+
+## Integrations
+- Optional `SLACK_WEBHOOK_URL` and `TEAMS_WEBHOOK_URL` let `/api/integrations/test` push a quick webhook health check.
+- Leave both blank locally to skip outbound webhook calls.
+
 ## Milestone Templates
 Edit `src/config/role-milestones.json` to customize default checklists per target role.
 
 ## Notes
 - Excel colors are not imported; add a `TargetRole` text column per sheet.
 - Outreach filter uses `?outreachId=...` query string.
+- `npm run prisma:seed` now provisions sample orgs, outreaches, people, goals, and activities for local demos.
 
 
 ## New features
@@ -96,14 +106,14 @@ Edit `src/config/role-milestones.json` to customize default checklists per targe
 - **Quick goal role set**: Change a person’s goal target role from the card.
 - **Audit log**: `/audit` page and `/api/audit` for recent changes (activities, milestones, goals, templates, person edits).
 - **WIP limit field**: `Outreach.wipLimit` column added (UI hook ready for later warnings).
-- **Templates import/export**: Download or POST a JSON to replace role milestone templates.
+- **Templates import/export** _(admin only)_: Download or POST a JSON to replace role milestone templates.
 
 
 ## New Features (Round 6)
 - **Coaching assignments**: `Person.coachEmail`, coach selector in drawer, analytics **Coach Load** chart, `/api/coaches`.
 - **Auto-advance goals**: When milestones hit 100%, mark **ACHIEVED** and auto-create the next role based on `src/config/role-next.json` (+60 days).
 - **Global Search**: `/search` page and `GET /api/search?q=` (people, tags, outreaches).
-- **CSV Import**: `/import/people` UI and `POST /api/import/people` for quick bulk onboarding.
+- **CSV Import** _(admin only)_: `/import/people` UI and `POST /api/import/people` for quick bulk onboarding.
 - **ICS Export**: `GET /api/export/ics?outreachId=...|personId=...` to subscribe to goal target dates in calendar apps.
 - **Duplicates detector**: `/duplicates` page and `GET /api/people/duplicates` to spot same-name entries.
 
@@ -143,3 +153,6 @@ Edit `src/config/role-milestones.json` to customize default checklists per targe
 - **PWA**: `public/manifest.json` + icons; manifest linked in layout for installable app.
 - **Daily Focus**: `/focus` mobile-friendly page for coaches (due soon, inactive) with quick actions.
 - **Slack / Teams webhooks**: `POST /api/integrations/test` sends a test message to `SLACK_WEBHOOK_URL`/`TEAMS_WEBHOOK_URL` if set.
+
+
+

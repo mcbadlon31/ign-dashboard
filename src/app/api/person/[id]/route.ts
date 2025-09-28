@@ -1,7 +1,7 @@
-
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { audit } from "@/lib/audit";
+import { resolveOrgId } from "@/lib/org";
 
 export async function GET(_req: Request, { params }: { params: { id: string }}){
   const p = await db.person.findUnique({
@@ -32,20 +32,33 @@ export async function GET(_req: Request, { params }: { params: { id: string }}){
 
 
 export async function PATCH(req: Request, { params }: { params: { id: string }}){
+  const orgId = await resolveOrgId();
+  if (!orgId) return NextResponse.json({ error: "Select an organization" }, { status: 400 });
+
+  const person = await db.person.findUnique({ where: { id: params.id }, select: { orgId: true } });
+  if (!person || person.orgId !== orgId) {
+    return NextResponse.json({ error: "Person not found" }, { status: 404 });
+  }
+
   const body = await req.json();
   const data: any = {};
   if (typeof body.fullName === 'string') data.fullName = body.fullName;
 
-  // Update outreach by id
-  if (typeof body.outreachId === 'string') data.outreachId = body.outreachId || null;
+  if (typeof body.outreachId === 'string') {
+    if (body.outreachId) {
+      const outreach = await db.outreach.findFirst({ where: { id: body.outreachId, orgId } });
+      if (!outreach) return NextResponse.json({ error: "Invalid outreach" }, { status: 400 });
+      data.outreachId = outreach.id;
+    } else {
+      data.outreachId = null;
+    }
+  }
 
   if (typeof body.coachEmail === 'string') data.coachEmail = body.coachEmail || null;
 
-  // Update current role by name: creates/updates assignment
   if (typeof body.currentRoleName === 'string') {
     const role = await db.role.findFirst({ where: { name: body.currentRoleName } });
     if (role) {
-      // upsert assignment
       const existing = await db.assignment.findFirst({ where: { personId: params.id } });
       if (existing) {
         await db.assignment.update({ where: { id: existing.id }, data: { activeRoleId: role.id } });

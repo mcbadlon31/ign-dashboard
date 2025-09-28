@@ -188,14 +188,16 @@ model SavedView {
 
 model Tag {
   id        String   @id @default(cuid())
-  orgId     String?
-  org       Org?     @relation(fields: [orgId], references: [id])
-  name      String   @unique
+  orgId     String
+  org       Org      @relation(fields: [orgId], references: [id])
+  name      String
   colorHex  String?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   people PersonTag[]
+
+  @@unique([orgId, name])
 }
 
 model PersonTag {
@@ -268,3 +270,4 @@ model UserOrg {
   @@index([userEmail])
   @@index([orgId])
 }
+

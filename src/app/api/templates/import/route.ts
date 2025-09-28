@@ -1,11 +1,13 @@
-
 import { NextRequest, NextResponse } from "next/server";
 import fs from "fs";
 import path from "path";
+import { assertAdmin } from "@/lib/rbac";
 
 const filePath = path.join(process.cwd(), "src", "config", "role-milestones.json");
 
 export async function POST(req: NextRequest) {
+  const { ok } = await assertAdmin(req);
+  if (!ok) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   const text = await req.text();
   try {
     const obj = JSON.parse(text);

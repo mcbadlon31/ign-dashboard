@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import fs from "fs";
 import path from "path";
 import { audit } from "@/lib/audit";
-
+import { assertAdmin } from "@/lib/rbac";
 
 const filePath = path.join(process.cwd(), "src", "config", "role-milestones.json");
 
@@ -13,8 +13,9 @@ export async function GET() {
 }
 
 export async function PUT(req: NextRequest) {
+  const { ok } = await assertAdmin(req);
+  if (!ok) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   const body = await req.json();
-  // Expect full object: { [roleName]: string[] }
   const text = JSON.stringify(body, null, 2);
   fs.writeFileSync(filePath, text, "utf-8");
   await audit('templates.update');
