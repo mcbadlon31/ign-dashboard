@@ -1,4 +1,4 @@
-import { GoalStatus, PrismaClient } from "@prisma/client";
+import { GoalStatus, PrismaClient, Stage } from "@prisma/client";
 
 const db = new PrismaClient();
 
@@ -11,6 +11,37 @@ function daysFromNow(days: number) {
 function firstOfMonth(date: Date) {
   return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), 1));
 }
+
+function monthsAgo(months: number) {
+  const date = new Date();
+  date.setMonth(date.getMonth() - months);
+  return date;
+}
+
+type MilestoneSeed = { id: string; name: string; completed: boolean; dueInDays: number };
+type ActivitySeed = { id: string; type: string; daysAgo: number; notes: string };
+type StageHistoryEntry = { stage: Stage; enteredAt: Date; notes?: string | null };
+type GoalSeed = {
+  id: string;
+  targetRole: string;
+  status: GoalStatus;
+  targetDate: Date;
+  milestones: MilestoneSeed[];
+};
+
+type PersonSeed = {
+  id: string;
+  fullName: string;
+  orgId: string;
+  outreachId: string;
+  coachEmail: string;
+  currentRole: string | null;
+  goal?: GoalSeed | null;
+  activities: ActivitySeed[];
+  tags: string[];
+  currentStage?: Stage | null;
+  stageHistory?: StageHistoryEntry[];
+};
 
 async function main() {
   const roleSeed = [
@@ -115,7 +146,7 @@ async function main() {
     });
   }
 
-  const peopleSeed = [
+  const peopleSeed: PersonSeed[] = [
     {
       id: "seed-person-alex",
       fullName: "Alex Johnson",
@@ -123,6 +154,14 @@ async function main() {
       outreachId: "seed-outreach-downtown",
       coachEmail: "coach.lee@example.com",
       currentRole: "Cell Dev Completer",
+      currentStage: Stage.BIBLE_STUDY_LEADER,
+      stageHistory: [
+        { stage: Stage.NEW_FOLLOW_UPS, enteredAt: monthsAgo(8), notes: "Attended welcome dinner" },
+        { stage: Stage.PGS, enteredAt: monthsAgo(6) },
+        { stage: Stage.FIC_SERIES_COMPLETER, enteredAt: monthsAgo(5) },
+        { stage: Stage.CELL_DEV_COMPLETER, enteredAt: monthsAgo(3) },
+        { stage: Stage.BIBLE_STUDY_LEADER, enteredAt: monthsAgo(1), notes: "Leading weekly study" },
+      ],
       goal: {
         id: "seed-goal-alex",
         targetRole: "BS Leader",
@@ -147,6 +186,15 @@ async function main() {
       outreachId: "seed-outreach-riverside",
       coachEmail: "coach.khan@example.com",
       currentRole: "BS Leader",
+      currentStage: Stage.HOUSE_FELLOWSHIP_LEADER,
+      stageHistory: [
+        { stage: Stage.NEW_FOLLOW_UPS, enteredAt: monthsAgo(10) },
+        { stage: Stage.PGS, enteredAt: monthsAgo(8) },
+        { stage: Stage.FIC_SERIES_COMPLETER, enteredAt: monthsAgo(6) },
+        { stage: Stage.CELL_DEV_COMPLETER, enteredAt: monthsAgo(4) },
+        { stage: Stage.BIBLE_STUDY_LEADER, enteredAt: monthsAgo(2) },
+        { stage: Stage.HOUSE_FELLOWSHIP_LEADER, enteredAt: monthsAgo(1), notes: "Launched HF beta group" },
+      ],
       goal: {
         id: "seed-goal-briana",
         targetRole: "HF Leader",
@@ -171,6 +219,13 @@ async function main() {
       outreachId: "seed-outreach-northhill",
       coachEmail: "coach.lee@example.com",
       currentRole: "Cell Dev Completer",
+      currentStage: Stage.CELL_DEV_COMPLETER,
+      stageHistory: [
+        { stage: Stage.NEW_FOLLOW_UPS, enteredAt: monthsAgo(7) },
+        { stage: Stage.PGS, enteredAt: monthsAgo(6) },
+        { stage: Stage.FIC_SERIES_COMPLETER, enteredAt: monthsAgo(5) },
+        { stage: Stage.CELL_DEV_COMPLETER, enteredAt: monthsAgo(2), notes: "Completed core training" },
+      ],
       goal: {
         id: "seed-goal-devon",
         targetRole: "BS Leader",
@@ -191,6 +246,14 @@ async function main() {
   ];
 
   for (const person of peopleSeed) {
+    const stageHistory = person.stageHistory ?? [];
+    const latestStage = stageHistory.reduce<StageHistoryEntry | null>((latest, entry) => {
+      if (!latest) return entry;
+      return latest.enteredAt > entry.enteredAt ? latest : entry;
+    }, null);
+    const derivedStage = person.currentStage ?? latestStage?.stage ?? null;
+    const stageSince = latestStage?.enteredAt ?? null;
+
     const record = await db.person.upsert({
       where: { id: person.id },
       update: {
@@ -198,6 +261,8 @@ async function main() {
         outreachId: person.outreachId,
         orgId: person.orgId,
         coachEmail: person.coachEmail,
+        currentStage: derivedStage,
+        stageSince,
         deletedAt: null,
       },
       create: {
@@ -206,8 +271,24 @@ async function main() {
         outreachId: person.outreachId,
         orgId: person.orgId,
         coachEmail: person.coachEmail,
+        currentStage: derivedStage,
+        stageSince,
       },
     });
+
+    await db.personStage.deleteMany({ where: { personId: record.id } });
+    if (stageHistory.length) {
+      for (const entry of stageHistory) {
+        await db.personStage.create({
+          data: {
+            personId: record.id,
+            stage: entry.stage,
+            enteredAt: entry.enteredAt,
+            notes: entry.notes ?? null,
+          },
+        });
+      }
+    }
 
     const roleId = person.currentRole ? roleByName.get(person.currentRole) ?? null : null;
     await db.assignment.upsert({

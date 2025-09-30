@@ -1,11 +1,19 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { audit } from "@/lib/audit";
 import { resolveOrgId } from "@/lib/org";
+import { getEmailFromReq, canAccessPersonId } from "@/lib/rbac";
 
-export async function GET(_req: Request, { params }: { params: { id: string }}){
-  const p = await db.person.findUnique({
-    where: { id: params.id },
+export async function GET(req: NextRequest, { params }: { params: { id: string }}) {
+  const email = await getEmailFromReq(req);
+  const orgId = await resolveOrgId({ email });
+  if (!orgId) return NextResponse.json({ error: "No organization access" }, { status: 403 });
+
+  const allowed = await canAccessPersonId(email, params.id);
+  if (!allowed) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+
+  const person = await db.person.findUnique({
+    where: { id: params.id, orgId },
     include: {
       assignment: { include: { role: true } },
       goalPlans: {
@@ -15,25 +23,28 @@ export async function GET(_req: Request, { params }: { params: { id: string }}){
         include: { target: true, milestones: true },
       },
       activities: { orderBy: { date: "desc" }, take: 50 },
-    }
+    },
   });
-  if (!p) return NextResponse.json({ error: "not found" }, { status: 404 });
+  if (!person) return NextResponse.json({ error: "not found" }, { status: 404 });
 
-  const goal = p.goalPlans[0] ?? null;
+  const goal = person.goalPlans[0] ?? null;
   return NextResponse.json({
-    id: p.id,
-    name: p.fullName,
-    currentRole: p.assignment?.role?.name ?? null,
+    id: person.id,
+    name: person.fullName,
+    currentRole: person.assignment?.role?.name ?? null,
     goal: goal ? { id: goal.target.id, name: goal.target.name, colorHex: goal.target.colorHex } : null,
     milestones: goal ? goal.milestones.map(m => ({ id: m.id, name: m.name, completed: m.completed })) : [],
-    activities: p.activities.map(a => ({ id: a.id, date: a.date, type: a.type, notes: a.notes })),
+    activities: person.activities.map(a => ({ id: a.id, date: a.date, type: a.type, notes: a.notes })),
   });
 }
 
+export async function PATCH(req: NextRequest, { params }: { params: { id: string }}) {
+  const email = await getEmailFromReq(req);
+  const orgId = await resolveOrgId({ email });
+  if (!orgId) return NextResponse.json({ error: "No organization access" }, { status: 403 });
 
-export async function PATCH(req: Request, { params }: { params: { id: string }}){
-  const orgId = await resolveOrgId();
-  if (!orgId) return NextResponse.json({ error: "Select an organization" }, { status: 400 });
+  const allowed = await canAccessPersonId(email, params.id);
+  if (!allowed) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
   const person = await db.person.findUnique({ where: { id: params.id }, select: { orgId: true } });
   if (!person || person.orgId !== orgId) {
@@ -41,10 +52,10 @@ export async function PATCH(req: Request, { params }: { params: { id: string }})
   }
 
   const body = await req.json();
-  const data: any = {};
-  if (typeof body.fullName === 'string') data.fullName = body.fullName;
+  const data: Record<string, unknown> = {};
+  if (typeof body.fullName === "string") data.fullName = body.fullName;
 
-  if (typeof body.outreachId === 'string') {
+  if (typeof body.outreachId === "string") {
     if (body.outreachId) {
       const outreach = await db.outreach.findFirst({ where: { id: body.outreachId, orgId } });
       if (!outreach) return NextResponse.json({ error: "Invalid outreach" }, { status: 400 });
@@ -54,9 +65,9 @@ export async function PATCH(req: Request, { params }: { params: { id: string }})
     }
   }
 
-  if (typeof body.coachEmail === 'string') data.coachEmail = body.coachEmail || null;
+  if (typeof body.coachEmail === "string") data.coachEmail = body.coachEmail || null;
 
-  if (typeof body.currentRoleName === 'string') {
+  if (typeof body.currentRoleName === "string") {
     const role = await db.role.findFirst({ where: { name: body.currentRoleName } });
     if (role) {
       const existing = await db.assignment.findFirst({ where: { personId: params.id } });
@@ -69,8 +80,9 @@ export async function PATCH(req: Request, { params }: { params: { id: string }})
   }
 
   if (Object.keys(data).length) {
-    await audit('person.update', { userEmail: undefined, entity:'person', entityId: params.id, meta: data });
+    await audit("person.update", { userEmail: email || undefined, entity: "person", entityId: params.id, meta: data });
     await db.person.update({ where: { id: params.id }, data });
   }
   return NextResponse.json({ ok: true });
 }
+

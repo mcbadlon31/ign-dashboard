@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { resolveOrgId } from "@/lib/org";
+import { computeWeeklyStreak } from "@/lib/activity-stats";
 import { canAccessOutreachId, getEmailFromReq, isAdminEmail } from "@/lib/rbac";
 
 function computeReadiness(progressPct: number, lastActivity: Date | null, streakWeeks: number) {
@@ -16,7 +17,10 @@ function computeReadiness(progressPct: number, lastActivity: Date | null, streak
 
 export async function GET(req: NextRequest) {
   const email = await getEmailFromReq(req);
-  const orgId = await resolveOrgId();
+  const orgId = await resolveOrgId({ email });
+  if (!orgId) {
+    return NextResponse.json({ error: "No organization access" }, { status: 403 });
+  }
   const isAdmin = isAdminEmail(email);
 
   const params = new URL(req.url).searchParams;
@@ -88,6 +92,17 @@ export async function GET(req: NextRequest) {
     }),
   ]);
 
+  const personIds = people.map(person => person.id);
+  let streakMap = new Map<string, number>();
+  if (personIds.length) {
+    const streakStart = new Date(Date.now() - 8 * 7 * 86_400_000);
+    const streakRecords = await db.activityLog.findMany({
+      where: { personId: { in: personIds }, date: { gte: streakStart }, person: { orgId } },
+      select: { personId: true, date: true },
+    });
+    streakMap = computeWeeklyStreak(streakRecords);
+  }
+
   const mapped = people.map(person => {
     const goal = person.goalPlans[0] ?? null;
     const totalMilestones = goal?.milestones.length ?? 0;
@@ -96,18 +111,25 @@ export async function GET(req: NextRequest) {
     const lastActivity = person.activities[0]?.date ? new Date(person.activities[0].date) : null;
     const ready =
       goal ? goal.status === "IN_PROGRESS" && totalMilestones > 0 && completedMilestones / totalMilestones >= 0.75 : false;
+    const streakWeeks = streakMap.get(person.id) ?? 0;
 
     return {
       id: person.id,
-      name: `${person.fullName}${person.outreach ? ` · ${person.outreach.name}` : ""}`,
+      name: `${person.fullName}${person.outreach ? " · " + person.outreach.name : ""}`,
       currentRole: person.assignment?.role?.name ?? null,
+      currentStage: person.currentStage,
+      stageSince: person.stageSince,
       goal: goal ? { name: goal.target.name, colorHex: goal.target.colorHex } : null,
       goalStatus: goal?.status ?? null,
       goalId: goal?.id ?? null,
       progress: goal ? `${completedMilestones}/${totalMilestones}` : undefined,
       progressPct,
       ready,
-      readinessIndex: computeReadiness(progressPct, lastActivity ?? null, 0),
+      streakWeeks,
+      readinessIndex: computeReadiness(progressPct, lastActivity ?? null, streakWeeks),
+      coachEmail: person.coachEmail,
+      assignee: person.assignment?.role?.name ?? null,
+      notes: person.notes,
     };
   });
 
@@ -135,3 +157,14 @@ export async function GET(req: NextRequest) {
     selectedId,
   });
 }
+
+
+
+
+
+
+
+
+
+
+

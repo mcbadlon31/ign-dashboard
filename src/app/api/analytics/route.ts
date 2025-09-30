@@ -1,6 +1,8 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { resolveOrgId } from "@/lib/org";
+import { getEmailFromReq } from "@/lib/rbac";
+import { computeWeeklyStreak } from "@/lib/activity-stats";
 
 function computeReadiness(progressPct: number, lastActivity: Date | null, streakWeeks: number) {
   const boundedProgress = Math.max(0, Math.min(100, progressPct));
@@ -13,13 +15,14 @@ function computeReadiness(progressPct: number, lastActivity: Date | null, streak
   return Math.round(boundedProgress * 0.7 + recencyScore * 0.2 + streakScore * 0.1);
 }
 
-export async function GET() {
-  const orgId = await resolveOrgId();
-  const goalWhere: any = { status: { in: ["PLANNED", "IN_PROGRESS", "ACHIEVED", "DEFERRED"] } };
-  if (orgId) {
-    goalWhere.person = { orgId };
+export async function GET(req: NextRequest) {
+  const email = await getEmailFromReq(req);
+  const orgId = await resolveOrgId({ email });
+  if (!orgId) {
+    return NextResponse.json({ error: "No organization access" }, { status: 403 });
   }
 
+  const goalWhere: any = { status: { in: ["PLANNED", "IN_PROGRESS", "ACHIEVED", "DEFERRED"] }, person: { orgId } };
   const goals = await db.goalPlan.findMany({
     where: goalWhere,
     include: { target: true, milestones: true, person: { select: { id: true, fullName: true, coachEmail: true } } },
@@ -55,16 +58,16 @@ export async function GET() {
   const now = new Date();
   const twoWeeksAgo = new Date(now.getTime() - 14 * 86_400_000);
   const thirtyDaysAgo = new Date(now.getTime() - 30 * 86_400_000);
+  const streakWindow = new Date(now.getTime() - 56 * 86_400_000);
 
-  const activityWhere: any = { date: { gte: thirtyDaysAgo } };
-  if (orgId) activityWhere.person = { orgId };
-
+  const activityWhere: any = { date: { gte: streakWindow }, person: { orgId } };
   const recentActivities = await db.activityLog.findMany({
     where: activityWhere,
     orderBy: { date: "desc" },
     select: { personId: true, date: true, type: true },
   });
 
+  const streakMap = computeWeeklyStreak(recentActivities);
   const lastActivityMap = new Map<string, Date>();
   const activityTypeCounts = new Map<string, number>();
   const activeWithin14Days = new Set<string>();
@@ -78,11 +81,12 @@ export async function GET() {
     if (!previous || date > previous) {
       lastActivityMap.set(activity.personId, date);
     }
-    activityTypeCounts.set(activity.type, (activityTypeCounts.get(activity.type) ?? 0) + 1);
+    if (date >= thirtyDaysAgo) {
+      activityTypeCounts.set(activity.type, (activityTypeCounts.get(activity.type) ?? 0) + 1);
+    }
   }
 
-  const personWhere: any = { deletedAt: null };
-  if (orgId) personWhere.orgId = orgId;
+  const personWhere: any = { deletedAt: null, orgId };
   const totalPeople = await db.person.count({ where: personWhere });
   const uncovered = Math.max(0, totalPeople - activeWithin14Days.size);
 
@@ -91,7 +95,7 @@ export async function GET() {
   let atRisk = 0;
   let readinessSum = 0;
   let readinessCount = 0;
-  const readinessList: Array<{ personId: string; name: string; readinessIndex: number }> = [];
+  const readinessList: Array<{ personId: string; name: string; readinessIndex: number; streakWeeks: number }> = [];
 
   for (const goal of goals) {
     const total = goal.milestones.length || 1;
@@ -99,6 +103,7 @@ export async function GET() {
     const pct = completed / total;
     const pctRounded = Math.round(pct * 100);
     const lastActivity = goal.person ? lastActivityMap.get(goal.person.id) ?? null : null;
+    const streakWeeks = goal.person ? streakMap.get(goal.person.id) ?? 0 : 0;
 
     if (goal.status === "IN_PROGRESS" && total > 0 && completed / total >= 0.75) {
       readyCount++;
@@ -110,13 +115,14 @@ export async function GET() {
     }
 
     if (goal.person) {
-      const readinessIndex = computeReadiness(pctRounded, lastActivity, 0);
+      const readinessIndex = computeReadiness(pctRounded, lastActivity, streakWeeks);
       readinessSum += readinessIndex;
       readinessCount += 1;
       readinessList.push({
         personId: goal.person.id,
         name: goal.person.fullName ?? goal.person.id,
         readinessIndex,
+        streakWeeks,
       });
     }
   }

@@ -3,16 +3,20 @@
 
 Next.js + Prisma + Tailwind app to track **current roles** and **future goals** across outreaches.
 
+See [Repository Guidelines](AGENTS.md) for the contributor guide.
+
 ## Run (Windows + VS Code)
 
 ```bash
 npm install
 copy .env.example .env
-npx prisma generate
-npx prisma migrate dev --name init
-npx ts-node prisma/seed.ts
+npm run prisma:generate
+npm run prisma:migrate -- --name init
+npm run prisma:seed
 npm run dev
 ```
+> These scripts automatically shell out to Node.js 20 via `npx node@20.16.0` so they work even if the system Node is still on 12.x. Installing Node 20+ locally is still recommended for faster runs and to avoid install warnings.
+
 Run additional migrations with `npm run prisma:migrate -- --name <label>` so each change gets a unique name.
 
 Open http://localhost:3000
@@ -23,6 +27,9 @@ Open http://localhost:3000
 - `/roles` – role management (CRUD + color)
 - `/goal/new` – **Goal wizard** (creates goal + auto‑milestones from templates)
 - `/import` – Excel importer (admin only; uses the active org scope)
+- `/planner` – stage roadmap highlighting the discipleship milestones
+- `/tracker` – table view of people with current stage, next step, and mentor notes
+- `/evaluations` – time-series counts of stage advances with CSV export
 
 ## API
 - `POST /api/activities` – log an activity
@@ -30,6 +37,8 @@ Open http://localhost:3000
 - `POST /api/goals` – create a goal; archives active goals for that person and seeds milestones
 - `GET /api/roles`, `POST /api/roles`, `PATCH/DELETE /api/roles/[id]`
 - `GET /api/people-min` – for wizard dropdown
+- `GET/POST /api/stage` – append stage history and set a person's current stage
+- `GET /api/evaluations` – aggregate stage entries by month/quarter/year
 
 ## Auth (NextAuth)
 - By default, `.env` sets `DEV_BYPASS_AUTH=true`, so auth is **skipped** for local dev.
@@ -153,6 +162,7 @@ Edit `src/config/role-milestones.json` to customize default checklists per targe
 - **PWA**: `public/manifest.json` + icons; manifest linked in layout for installable app.
 - **Daily Focus**: `/focus` mobile-friendly page for coaches (due soon, inactive) with quick actions.
 - **Slack / Teams webhooks**: `POST /api/integrations/test` sends a test message to `SLACK_WEBHOOK_URL`/`TEAMS_WEBHOOK_URL` if set.
+
 
 
 

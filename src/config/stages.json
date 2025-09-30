@@ -1,0 +1,50 @@
+[
+  {
+    "key": "NEW_FOLLOW_UPS",
+    "label": "New Follow-ups",
+    "color": "#3b82f6",
+    "short": "NF"
+  },
+  {
+    "key": "PGS",
+    "label": "Potential Good Soil",
+    "color": "#10b981",
+    "short": "PGS"
+  },
+  {
+    "key": "FIC_SERIES_COMPLETER",
+    "label": "FIC Series Completer",
+    "color": "#8b5cf6",
+    "short": "FIC"
+  },
+  {
+    "key": "CELL_DEV_COMPLETER",
+    "label": "Cell Dev Completer",
+    "color": "#ec4899",
+    "short": "CDC"
+  },
+  {
+    "key": "BIBLE_STUDY_LEADER",
+    "label": "Bible Study Leader",
+    "color": "#f59e0b",
+    "short": "BSL"
+  },
+  {
+    "key": "HOUSE_FELLOWSHIP_LEADER",
+    "label": "House Fellowship Leader",
+    "color": "#ef4444",
+    "short": "HFL"
+  },
+  {
+    "key": "DISCIPLESHIP_CELL_LEADER",
+    "label": "Discipleship Cell Leader",
+    "color": "#14b8a6",
+    "short": "DCL"
+  },
+  {
+    "key": "OUTREACH_LEADER",
+    "label": "Outreach Leader",
+    "color": "#0ea5e9",
+    "short": "OL"
+  }
+]

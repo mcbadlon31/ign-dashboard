@@ -21,6 +21,17 @@ enum GoalStatus {
   DEFERRED
 }
 
+enum Stage {
+  NEW_FOLLOW_UPS
+  PGS
+  FIC_SERIES_COMPLETER
+  CELL_DEV_COMPLETER
+  BIBLE_STUDY_LEADER
+  HOUSE_FELLOWSHIP_LEADER
+  DISCIPLESHIP_CELL_LEADER
+  OUTREACH_LEADER
+}
+
 model User {
   id          String       @id @default(cuid())
   email       String       @unique
@@ -86,7 +97,23 @@ model Person {
   createdAt   DateTime    @default(now())
   updatedAt   DateTime    @updatedAt
   coachEmail  String?
+  currentStage Stage?
+  stageSince   DateTime?
+  stages      PersonStage[]
   deletedAt   DateTime?
+}
+
+model PersonStage {
+  id        String   @id @default(cuid())
+  personId  String
+  stage     Stage
+  enteredAt DateTime @default(now())
+  notes     String?
+  createdAt DateTime @default(now())
+
+  person Person @relation(fields: [personId], references: [id])
+
+  @@index([personId, stage])
 }
 
 model Assignment {

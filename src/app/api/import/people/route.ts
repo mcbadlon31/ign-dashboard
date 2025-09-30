@@ -20,10 +20,10 @@ function parseCSV(text: string) {
 }
 
 export async function POST(req: NextRequest) {
-  const { ok } = await assertAdmin(req);
+  const { ok, email } = await assertAdmin(req);
   if (!ok) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
-  const orgId = await resolveOrgId();
+  const orgId = await resolveOrgId({ email });
   if (!orgId) return NextResponse.json({ error: "Select an organization" }, { status: 400 });
 
   const text = await req.text();
@@ -89,3 +89,4 @@ export async function POST(req: NextRequest) {
 
   return NextResponse.json({ ok: true, created });
 }
+

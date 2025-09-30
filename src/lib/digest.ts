@@ -1,7 +1,12 @@
 import { db } from "./db";
 
-export async function buildDigestPreviewHtml(outreachId?: string) {
-  const where: { outreachId?: string } = {};
+type DigestPreviewOptions = {
+  orgId: string;
+  outreachId?: string;
+};
+
+export async function buildDigestPreviewHtml({ orgId, outreachId }: DigestPreviewOptions) {
+  const where: { orgId: string; outreachId?: string } = { orgId };
   if (outreachId) where.outreachId = outreachId;
 
   const people = await db.person.findMany({

@@ -2,16 +2,16 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { assertAdmin } from "@/lib/rbac";
 import { resolveOrgId } from "@/lib/org";
-import * as XLSX from "xlsx";
+import ExcelJS from "exceljs";
 import templates from "@/config/role-milestones.json";
 
 export const runtime = "nodejs";
 
 export async function POST(req: NextRequest) {
-  const { ok } = await assertAdmin(req);
+  const { ok, email } = await assertAdmin(req);
   if (!ok) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
-  const orgId = await resolveOrgId();
+  const orgId = await resolveOrgId({ email });
   if (!orgId) return NextResponse.json({ error: "Select an organization" }, { status: 400 });
 
   const form = await req.formData();
@@ -19,14 +19,15 @@ export async function POST(req: NextRequest) {
   if (!file) return NextResponse.json({ error: "No file" }, { status: 400 });
 
   const buf = Buffer.from(await file.arrayBuffer());
-  const wb = XLSX.read(buf, { type: "buffer" });
+  const workbook = new ExcelJS.Workbook();
+  await workbook.xlsx.load(buf);
 
   const months: Record<string,string> = { September: "09", October: "10", November: "11", December: "12" };
   let peopleImported = 0, goalsCreated = 0, milestonesCreated = 0;
 
-  for (const sheetName of wb.SheetNames) {
-    const ws = wb.Sheets[sheetName];
-    const rows: any[] = XLSX.utils.sheet_to_json(ws, { defval: "" });
+  for (const worksheet of workbook.worksheets) {
+    const sheetName = worksheet.name;
+    const rows = worksheetToObjects(worksheet);
 
     let outreach = await db.outreach.findFirst({ where: { name: sheetName, orgId } });
     if (!outreach) {
@@ -97,3 +98,32 @@ export async function POST(req: NextRequest) {
 
   return NextResponse.json({ ok: true, peopleImported, goalsCreated, milestonesCreated });
 }
+
+function worksheetToObjects(worksheet: ExcelJS.Worksheet) {
+  const headerRow = worksheet.getRow(1);
+  const headers: string[] = [];
+
+  headerRow.eachCell({ includeEmpty: true }, (cell, colNumber) => {
+    const header = cell.text?.trim();
+    headers[colNumber] = header ?? "";
+  });
+
+  const records: Record<string, string>[] = [];
+
+  worksheet.eachRow({ includeEmpty: false }, (row, rowNumber) => {
+    if (rowNumber === 1) return;
+    const record: Record<string, string> = {};
+    for (let colNumber = 1; colNumber < headers.length; colNumber += 1) {
+      const header = headers[colNumber];
+      if (!header) continue;
+      const cell = row.getCell(colNumber);
+      record[header] = cell?.text?.trim() ?? "";
+    }
+    if (Object.keys(record).length) {
+      records.push(record);
+    }
+  });
+
+  return records;
+}
+
